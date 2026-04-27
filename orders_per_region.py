@@ -6,8 +6,8 @@ import matplotlib.colors as mcolors
 url = "https://oracleapex.com/ords/zahraa_individual_assignment/myapi/sales_per_region"
 
 headers = {
-    "Accept": "application/json",
-    "Host": "oracleapex.com",
+    "Accept":     "application/json",
+    "Host":       "oracleapex.com",
     "User-Agent": "Mozilla/5.0 Firefox/149.0"
 }
 
@@ -18,37 +18,48 @@ response = requests.get(url, headers=headers, timeout=30)
 if response.status_code == 200:
     print("Connection successful!")
     data = response.json()
-    
+
     # Safe access to items
     items = data.get("items", [])
-    
+
     if not items:
         print("No data returned from API")
     else:
-        # Safely build sets
-        regions = sorted(set(
-            item.get("region_name") for item in items if item.get("region_name") is not None
-        ))
-        categories = sorted(set(
-            item.get("category_name") for item in items if item.get("category_name") is not None
-        ))
+        # Safe loop extraction
+        regions    = []
+        categories = []
+        clean_items = []
 
-        # Create a 2D grid of profit values
+        for item in items:
+            region   = item.get("region_name")
+            category = item.get("category_name")
+            profit   = item.get("total_profit")
+
+            if region is not None and category is not None and profit is not None:
+                clean_items.append({
+                    "region_name":   region,
+                    "category_name": category,
+                    "total_profit":  float(profit)
+                })
+                if region not in regions:
+                    regions.append(region)
+                if category not in categories:
+                    categories.append(category)
+
+        regions    = sorted(regions)
+        categories = sorted(categories)
+
+        # Build matrix
         matrix = []
         for region in regions:
             row = []
             for category in categories:
-                value = 0.0
-
-                for item in items:
-                    if (
-                        item.get("region_name") == region and
-                        item.get("category_name") == category and
-                        item.get("total_profit") is not None
-                    ):
-                        value = float(item.get("total_profit"))
-                        break
-
+                value = next(
+                    (item["total_profit"] for item in clean_items
+                     if item["region_name"]   == region
+                     and item["category_name"] == category),
+                    0.0
+                )
                 row.append(value)
             matrix.append(row)
 
@@ -70,7 +81,7 @@ if response.status_code == 200:
         ax.set_xticklabels(categories, rotation=45, ha="right")
         ax.set_yticklabels(regions)
 
-        # Annotate each cell
+        # Annotate each cell with its value
         for i, region in enumerate(regions):
             for j, category in enumerate(categories):
                 ax.text(
@@ -87,6 +98,9 @@ if response.status_code == 200:
         ax.set_ylabel("Region")
 
         plt.tight_layout()
+        plt.savefig("sales_per_region.png", dpi=150, bbox_inches="tight")
+        print("Chart saved!")
         plt.show()
+
 else:
     print(f"Connection failed. Status code: {response.status_code}")
