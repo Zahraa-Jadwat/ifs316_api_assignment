@@ -2,47 +2,47 @@ import requests
 import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 
-# Your Oracle APEX API endpoint
+# Oracle APEX API endpoint
 url = "https://oracleapex.com/ords/zahraa_individual_assignment/myapi/credit_limit"
 
 headers = {
-    "Accept": "application/json",
-    "Host": "oracleapex.com",
+    "Accept":     "application/json",
+    "Host":       "oracleapex.com",
     "User-Agent": "Mozilla/5.0 Firefox/149.0"
 }
 
-# Call the API
+# Fetch data from API
 response = requests.get(url, headers=headers, timeout=30)
 
-# Extract data
+# Extract items
 if response.status_code == 200:
     print("Connection successful!")
     data = response.json()
-    
+
     # Safe access to items
     items = data.get("items", [])
-    
+
     if not items:
         print("No data returned from API")
     else:
         # Safe loop extraction
-        years = []
+        years     = []
         customers = []
 
         for item in items:
-            year = item.get("order_year")
-            value = item.get("customers_exceeding_limit")
+            year     = item.get("order_year")
+            customer = item.get("customers_exceeding_limit")
 
-            if year is not None and value is not None:
+            if year is not None and customer is not None:
                 years.append(str(year))
-                customers.append(float(value))
+                customers.append(int(customer))
 
         # Plot graph
         fig, ax = plt.subplots(figsize=(10, 6))
 
         bars = ax.barh(years, customers, color="steelblue", edgecolor="white", height=0.6)
 
-        # Add value labels
+        # Add value labels at the end of each bar
         for bar in bars:
             width = bar.get_width()
             if width > 0:
@@ -59,16 +59,17 @@ if response.status_code == 200:
 
         ax.xaxis.set_major_locator(ticker.MultipleLocator(5))
         ax.tick_params(axis="both", labelsize=11)
+        ax.set_xlim(0, max(customers) * 1.15)
 
-        if customers:
-            ax.set_xlim(0, max(customers) * 1.15)  # prevent crash if empty
-
-        # Grid and style
+        # Light grid on x-axis only for readability
         ax.xaxis.grid(True, linestyle="--", alpha=0.5)
         ax.set_axisbelow(True)
         ax.spines[["top", "right"]].set_visible(False)
 
         plt.tight_layout()
+        plt.savefig("credit_limit.png", dpi=150, bbox_inches="tight")
+        print("Chart saved!")
         plt.show()
+
 else:
     print(f"Connection failed. Status code: {response.status_code}")
