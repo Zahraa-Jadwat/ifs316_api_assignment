@@ -4,35 +4,59 @@ import matplotlib.pyplot as plt
 # Oracle APEX API endpoint
 url = "https://oracleapex.com/ords/zahraa_individual_assignment/myapi/average_order_value"
 
+headers = {
+    "Accept": "application/json",
+    "Host": "oracleapex.com",
+    "User-Agent": "Mozilla/5.0 Firefox/149.0"
+}
+
 # Fetch data from API
-response = requests.get(url)
-data = response.json()
+response = requests.get(url, headers=headers, timeout=30)
 
 # Extract items
-items = data["items"]
+if response.status_code == 200:
+    print("Connection successful!")
+    data = response.json()
 
-months      = [item["month_name"]       for item in items]
-avg_order   = [item["avg_order_value"]  for item in items]
+    # Safe access to items
+    items = data.get("items", [])
 
-# Create Line Chart
-plt.figure(figsize=(14, 6))
+    if not items:
+        print("No data returned from API")
+    else:
+        # Safe loop extraction
+        months = []
+        avg_order = []
 
-plt.plot(
-    months,
-    avg_order,
-    marker="o",
-    linewidth=2,
-    markersize=7,
-    color="#2196F3",
-    markerfacecolor="#FF5722"
-)
+        for item in items:
+            month = item.get("month_name")
+            value = item.get("avg_order_value")
 
-plt.title("Average Order Value per Month (2017)")
-plt.xlabel("Month")
-plt.ylabel("Average Order Value (USD)")
+            if month is not None and value is not None:
+                months.append(month)
+                avg_order.append(float(value))
 
-plt.xticks(rotation=45, ha="right")
-plt.grid(axis="y", linestyle="--", alpha=0.5)
+        # Create Line Chart
+        plt.figure(figsize=(14, 6))
 
-plt.tight_layout()
-plt.show()
+        plt.plot(
+            months,
+            avg_order,
+            marker="o",
+            linewidth=2,
+            markersize=7,
+            color="#2196F3",
+            markerfacecolor="#FF5722"
+        )
+
+        plt.title("Average Order Value per Month (2017)")
+        plt.xlabel("Month")
+        plt.ylabel("Average Order Value (USD)")
+
+        plt.xticks(rotation=45, ha="right")
+        plt.grid(axis="y", linestyle="--", alpha=0.5)
+
+        plt.tight_layout()
+        plt.show()
+else:
+    print(f"Connection failed. Status code: {response.status_code}")
