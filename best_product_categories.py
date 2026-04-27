@@ -4,54 +4,30 @@ import matplotlib.pyplot as plt
 # Oracle APEX API endpoint
 url = "https://oracleapex.com/ords/zahraa_individual_assignment/myapi/best_product_categories"
 
-headers = {
-    "Accept": "application/json",
-    "Host": "oracleapex.com",
-    "User-Agent": "Mozilla/5.0 Firefox/149.0"
-}
-
 # Fetch data from API
-response = requests.get(url, headers=headers, timeout=30)
+response = requests.get(url)
+data = response.json()
 
 # Extract items
-if response.status_code == 200:
-    print("Connection successful!")
-    data = response.json()
+items = data["items"]
 
-    # Safe access to items
-    items = data.get("items", [])
+categories = [item["category_name"] for item in items]
+profits = [item["total_profit"] for item in items]
 
-    if not items:
-        print("No data returned from API")
-    else:
-        # Safe loop extraction
-        categories = []
-        profits = []
+# Create Pie Chart
+plt.figure()
 
-        for item in items:
-            category = item.get("category_name")
-            profit = item.get("total_profit")
+plt.pie(
+    profits,
+    labels=categories,
+    autopct='%1.1f%%',
+    startangle=140
+)
 
-            if category is not None and profit is not None:
-                categories.append(category)
-                profits.append(float(profit))
+plt.title("Best Product Categories by Profit")
 
-        # Create Pie Chart
-        plt.figure()
+# Key
+plt.legend(categories, title="Categories", loc="center left", bbox_to_anchor=(1, 0.5))
 
-        plt.pie(
-            profits,
-            labels=categories,
-            autopct='%1.1f%%',
-            startangle=140
-        )
-
-        plt.title("Best Product Categories by Profit")
-
-        # Key / Legend
-        plt.legend(categories, title="Categories", loc="center left", bbox_to_anchor=(1, 0.5))
-
-        plt.tight_layout()
-        plt.show()
-else:
-    print(f"Connection failed. Status code: {response.status_code}")
+plt.tight_layout()
+plt.show()
