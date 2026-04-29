@@ -27,7 +27,7 @@ ANSWER:
 """
 
         payload = {
-            "model": "qwen3.5:2b",
+            "model": "gemma2:2b",
             "prompt": prompt,
             "stream": False
         }
