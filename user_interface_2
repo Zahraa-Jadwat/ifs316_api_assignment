@@ -1,0 +1,463 @@
+import requests
+import tkinter as tk
+from tkinter import font as tkfont
+import threading
+
+# -------------------------------
+# LLM FUNCTION (Ollama - Gemma 2B)
+# -------------------------------
+def query_ollama(context, question):
+    try:
+        url = "http://localhost:11434/api/generate"
+
+        if not context.strip():
+            return "⚠️ No data was loaded from the APIs. Please check your internet connection and restart the app."
+
+        prompt = f"""You are a helpful data analyst assistant. You have been given real business data from 5 reports. Use this data to answer the user's question accurately and helpfully.
+
+Here is the full dataset you have access to:
+
+{context}
+
+The user is asking: {question}
+
+Instructions:
+- Answer using the data above.
+- Be specific: include actual numbers, names, and figures from the data.
+- If asked for the best/top/highest, sort and identify it from the data.
+- If asked for a summary, summarize all relevant sections.
+- Only say you cannot answer if the question is truly unrelated to business data (e.g. asking about weather or recipes).
+- Do not say "I can only answer questions related to the dataset" unless the question is completely unrelated to business, sales, profit, orders, employees, or credit.
+
+Answer:"""
+
+        payload = {
+            "model": "gemma:2b",
+            "prompt": prompt,
+            "stream": False
+        }
+
+        response = requests.post(url, json=payload, timeout=180)
+
+        if response.status_code != 200:
+            return f"Error {response.status_code}: {response.text}"
+
+        return response.json().get("response", "No response")
+
+    except Exception as e:
+        return f"Error: {str(e)}"
+
+
+# -------------------------------
+# FETCH ALL DATA
+# -------------------------------
+def fetch_all_data():
+    context = ""
+    loaded = []
+    failed = []
+
+    # Remove the Host header — it can cause SSL/routing issues with some servers
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+    }
+
+    base = "https://oracleapex.com/ords/zahraa_individual_assignment/myapi"
+
+    endpoints = [
+        ("average_order_value",    "Average Order Value"),
+        ("best_product_categories","Best Product Categories"),
+        ("credit_limit",           "Credit Limit"),
+        ("sales_per_region",       "Orders per Region / Sales per Region"),
+        ("profits_per_employee",   "Profit per Employee"),
+    ]
+
+    for endpoint, label in endpoints:
+        url = f"{base}/{endpoint}"
+        try:
+            res = requests.get(url, headers=headers, timeout=30)
+            print(f"  [{res.status_code}] {label}")
+
+            if res.status_code == 200:
+                data = res.json()
+                items = data.get("items", [])
+
+                if not items:
+                    # Some APEX APIs return rows at top level
+                    items = data if isinstance(data, list) else []
+
+                if items:
+                    context += f"\n=== {label} ===\n"
+
+                    if endpoint == "average_order_value":
+                        for i in items:
+                            context += f"  Month: {i.get('month_name','?')}  |  Avg Order Value: ${float(i.get('avg_order_value', 0)):,.2f}\n"
+
+                    elif endpoint == "best_product_categories":
+                        for i in items:
+                            context += f"  Category: {i.get('category_name','?')}  |  Total Profit: ${float(i.get('total_profit', 0)):,.2f}\n"
+
+                    elif endpoint == "credit_limit":
+                        for i in items:
+                            context += f"  Year: {i.get('order_year','?')}  |  Customers Exceeding Credit Limit: {i.get('customers_exceeding_limit','?')}\n"
+
+                    elif endpoint == "sales_per_region":
+                        for i in items:
+                            context += f"  Region: {i.get('region_name','?')}  |  Category: {i.get('category_name','?')}  |  Total Profit: ${float(i.get('total_profit', 0)):,.2f}\n"
+
+                    elif endpoint == "profits_per_employee":
+                        for i in items:
+                            context += f"  Employee: {i.get('employee_name','?')}  |  Total Profit: ${float(i.get('total_profit', 0)):,.2f}\n"
+
+                    loaded.append(label)
+                else:
+                    print(f"    ⚠️  No items found. Raw response: {res.text[:200]}")
+                    failed.append(f"{label} (empty response)")
+            else:
+                print(f"    ⚠️  HTTP {res.status_code}: {res.text[:200]}")
+                failed.append(f"{label} (HTTP {res.status_code})")
+
+        except Exception as e:
+            print(f"    ❌ Exception for {label}: {e}")
+            failed.append(f"{label} (error: {e})")
+
+    print(f"\n✅ Loaded: {loaded}")
+    if failed:
+        print(f"⚠️  Failed: {failed}")
+
+    if not context.strip():
+        context = "No data could be loaded from the APIs."
+
+    return context, loaded, failed
+
+
+# -------------------------------
+# ROUNDED RECTANGLE HELPER
+# -------------------------------
+def rounded_rect(canvas, x1, y1, x2, y2, radius, **kwargs):
+    points = [
+        x1 + radius, y1,
+        x2 - radius, y1,
+        x2, y1,
+        x2, y1 + radius,
+        x2, y2 - radius,
+        x2, y2,
+        x2 - radius, y2,
+        x1 + radius, y2,
+        x1, y2,
+        x1, y2 - radius,
+        x1, y1 + radius,
+        x1, y1,
+    ]
+    return canvas.create_polygon(points, smooth=True, **kwargs)
+
+
+# -------------------------------
+# CHAT BUBBLE WIDGET
+# -------------------------------
+class ChatBubble(tk.Frame):
+    def __init__(self, parent, message, role, **kwargs):
+        super().__init__(parent, bg="#212121", **kwargs)
+
+        is_user = role == "user"
+
+        bubble_bg = "#2f2f2f" if is_user else "#212121"
+        fg_color = "#ececec"
+        align = tk.E if is_user else tk.W
+        padx_val = (80, 12) if is_user else (12, 80)
+
+        # Role label
+        role_label = tk.Label(
+            self,
+            text="You" if is_user else "✦ Assistant",
+            bg="#212121",
+            fg="#888888",
+            font=("Segoe UI", 8, "bold"),
+            anchor="e" if is_user else "w"
+        )
+        role_label.pack(fill=tk.X, padx=padx_val, pady=(6, 2))
+
+        # Message bubble
+        bubble = tk.Frame(self, bg=bubble_bg, padx=14, pady=10)
+        bubble.pack(anchor=align, padx=padx_val, pady=(0, 6))
+
+        msg_label = tk.Message(
+            bubble,
+            text=message,
+            bg=bubble_bg,
+            fg=fg_color,
+            font=("Segoe UI", 10),
+            width=520,
+            justify=tk.LEFT
+        )
+        msg_label.pack()
+
+
+# -------------------------------
+# MAIN UI
+# -------------------------------
+def create_ui(context, loaded=None, failed=None):
+    loaded = loaded or []
+    failed = failed or []
+
+    # ── Colours & fonts ──────────────────────────────
+    BG         = "#212121"
+    INPUT_BG   = "#2f2f2f"
+    BORDER     = "#3f3f3f"
+    ACCENT     = "#ab68ff"   # purple pill
+    BTN_BG     = "#4a4a4a"
+    BTN_HOV    = "#5a5a5a"
+    FG         = "#ececec"
+    MUTED      = "#888888"
+    SEND_BG    = "#676767"
+    SEND_HOV   = "#888888"
+
+    root = tk.Tk()
+    root.title("Data Analyst Assistant")
+    root.geometry("820x680")
+    root.minsize(600, 500)
+    root.configure(bg=BG)
+
+    try:
+        title_font   = tkfont.Font(family="Segoe UI", size=22, weight="normal")
+        body_font    = tkfont.Font(family="Segoe UI", size=10)
+        small_font   = tkfont.Font(family="Segoe UI", size=9)
+        pill_font    = tkfont.Font(family="Segoe UI", size=9, weight="bold")
+        send_font    = tkfont.Font(family="Segoe UI", size=12, weight="bold")
+    except Exception:
+        title_font = body_font = small_font = pill_font = send_font = None
+
+    messages = []   # list of (role, text) for session
+
+    # ── Top bar ──────────────────────────────────────
+    topbar = tk.Frame(root, bg=BG, height=48)
+    topbar.pack(fill=tk.X, padx=20, pady=(12, 0))
+    topbar.pack_propagate(False)
+
+    tk.Label(topbar, text="Data Analyst  ˅", bg=BG, fg=FG,
+             font=title_font).pack(side=tk.LEFT, pady=8)
+
+    # Purple pill button (decorative / branding)
+    pill_canvas = tk.Canvas(topbar, bg=BG, highlightthickness=0,
+                            width=110, height=32)
+    pill_canvas.pack(side=tk.RIGHT, pady=8)
+    rounded_rect(pill_canvas, 0, 2, 110, 30, 14, fill=ACCENT, outline="")
+    pill_canvas.create_text(55, 16, text="🎁  Reports", fill="white",
+                             font=pill_font)
+
+    # ── Data status bar ──────────────────────────────
+    if loaded or failed:
+        status_frame = tk.Frame(root, bg="#1a1a1a")
+        status_frame.pack(fill=tk.X, padx=20, pady=(0, 4))
+        status_text = f"✅ {len(loaded)} report(s) loaded"
+        if failed:
+            status_text += f"   ⚠️ {len(failed)} failed: {', '.join(failed)}"
+        status_color = "#4caf50" if not failed else "#ff9800"
+        tk.Label(status_frame, text=status_text, bg="#1a1a1a",
+                 fg=status_color,
+                 font=tkfont.Font(family="Segoe UI", size=8)).pack(anchor="w", pady=3)
+
+    # ── Scrollable chat area ──────────────────────────
+    chat_outer = tk.Frame(root, bg=BG)
+    chat_outer.pack(fill=tk.BOTH, expand=True, padx=0, pady=0)
+
+    scrollbar = tk.Scrollbar(chat_outer, bg=BG, troughcolor=BG,
+                              activebackground=BORDER, bd=0, width=8)
+    scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+    chat_canvas = tk.Canvas(chat_outer, bg=BG, bd=0,
+                             highlightthickness=0,
+                             yscrollcommand=scrollbar.set)
+    chat_canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+    scrollbar.config(command=chat_canvas.yview)
+
+    chat_frame = tk.Frame(chat_canvas, bg=BG)
+    chat_window = chat_canvas.create_window((0, 0), window=chat_frame,
+                                             anchor="nw")
+
+    def on_frame_configure(e):
+        chat_canvas.configure(scrollregion=chat_canvas.bbox("all"))
+
+    def on_canvas_configure(e):
+        chat_canvas.itemconfig(chat_window, width=e.width)
+
+    chat_frame.bind("<Configure>", on_frame_configure)
+    chat_canvas.bind("<Configure>", on_canvas_configure)
+
+    def scroll_to_bottom():
+        chat_canvas.update_idletasks()
+        chat_canvas.yview_moveto(1.0)
+
+    # ── Welcome / placeholder ─────────────────────────
+    welcome_frame = tk.Frame(chat_frame, bg=BG)
+    welcome_frame.pack(expand=True, pady=60)
+
+    tk.Label(welcome_frame,
+             text="What's on the agenda today?",
+             bg=BG, fg=FG,
+             font=tkfont.Font(family="Segoe UI", size=20)).pack()
+
+    # Suggestion chips
+    chips_frame = tk.Frame(welcome_frame, bg=BG)
+    chips_frame.pack(pady=24)
+
+    chip_data = [
+        ("📊", "Avg Order Value"),
+        ("🏷️", "Product Categories"),
+        ("💳", "Credit Limit"),
+        ("🌍", "Orders per Region"),
+        ("💰", "Profit per Region"),
+    ]
+
+    def chip_click(label):
+        entry_var.set(f"Show me the {label}")
+        send_message()
+
+    for icon, label in chip_data:
+        btn = tk.Button(
+            chips_frame,
+            text=f"{icon}  {label}",
+            bg=INPUT_BG, fg=FG,
+            font=small_font,
+            relief=tk.FLAT,
+            cursor="hand2",
+            padx=12, pady=7,
+            bd=1,
+            highlightbackground=BORDER,
+            highlightthickness=1,
+            command=lambda l=label: chip_click(l)
+        )
+        btn.pack(side=tk.LEFT, padx=6)
+
+        def on_enter(e, b=btn): b.config(bg=BTN_HOV)
+        def on_leave(e, b=btn): b.config(bg=INPUT_BG)
+        btn.bind("<Enter>", on_enter)
+        btn.bind("<Leave>", on_leave)
+
+    # ── Bottom input area ─────────────────────────────
+    bottom = tk.Frame(root, bg=BG)
+    bottom.pack(fill=tk.X, padx=20, pady=(8, 16))
+
+    # Outer pill-shaped input container
+    input_container = tk.Frame(bottom, bg=INPUT_BG,
+                                highlightbackground=BORDER,
+                                highlightthickness=1)
+    input_container.pack(fill=tk.X)
+
+    # "+" attach button (left)
+    plus_btn = tk.Label(input_container, text="＋", bg=INPUT_BG,
+                        fg=MUTED, font=tkfont.Font(family="Segoe UI", size=14),
+                        cursor="hand2", padx=10)
+    plus_btn.pack(side=tk.LEFT, padx=(6, 0), pady=10)
+
+    entry_var = tk.StringVar()
+    entry = tk.Entry(
+        input_container,
+        textvariable=entry_var,
+        bg=INPUT_BG, fg=FG,
+        insertbackground=FG,
+        font=body_font,
+        relief=tk.FLAT,
+        bd=0
+    )
+    entry.pack(side=tk.LEFT, fill=tk.X, expand=True, ipady=10, padx=6)
+
+    # Mic icon
+    mic_label = tk.Label(input_container, text="🎤", bg=INPUT_BG,
+                          font=tkfont.Font(family="Segoe UI", size=12),
+                          cursor="hand2", padx=6)
+    mic_label.pack(side=tk.LEFT, pady=10)
+
+    # Send button (round dark circle with arrow)
+    send_btn = tk.Canvas(input_container, width=34, height=34,
+                         bg=INPUT_BG, highlightthickness=0, cursor="hand2")
+    send_btn.pack(side=tk.RIGHT, padx=(4, 8), pady=8)
+    send_circle = send_btn.create_oval(2, 2, 32, 32, fill=SEND_BG, outline="")
+    send_arrow  = send_btn.create_text(17, 17, text="↑", fill="white",
+                                        font=send_font)
+
+    # Disclaimer
+    tk.Label(bottom,
+             text="Assistant can make mistakes. Verify important data.",
+             bg=BG, fg=MUTED,
+             font=tkfont.Font(family="Segoe UI", size=8)).pack(pady=(4, 0))
+
+    # ── Thinking indicator ────────────────────────────
+    thinking_var = tk.StringVar(value="")
+    thinking_label = tk.Label(root, textvariable=thinking_var,
+                               bg=BG, fg=MUTED,
+                               font=tkfont.Font(family="Segoe UI", size=9,
+                                                slant="italic"))
+    thinking_label.pack(pady=(0, 4))
+
+    thinking_dots = ["", ".", "..", "..."]
+    thinking_idx  = [0]
+    thinking_job  = [None]
+
+    def animate_thinking():
+        thinking_idx[0] = (thinking_idx[0] + 1) % len(thinking_dots)
+        thinking_var.set(f"Assistant is thinking{thinking_dots[thinking_idx[0]]}")
+        thinking_job[0] = root.after(400, animate_thinking)
+
+    def stop_thinking():
+        if thinking_job[0]:
+            root.after_cancel(thinking_job[0])
+            thinking_job[0] = None
+        thinking_var.set("")
+
+    # ── Send logic ────────────────────────────────────
+    def add_bubble(role, text):
+        if welcome_frame.winfo_ismapped():
+            welcome_frame.pack_forget()
+        bubble = ChatBubble(chat_frame, text, role)
+        bubble.pack(fill=tk.X, pady=2)
+        scroll_to_bottom()
+
+    def send_message(event=None):
+        user_msg = entry_var.get().strip()
+        if not user_msg:
+            return
+
+        entry_var.set("")
+        add_bubble("user", user_msg)
+        messages.append(("user", user_msg))
+        entry.config(state=tk.DISABLED)
+        send_btn.itemconfig(send_circle, fill=MUTED)
+        animate_thinking()
+
+        def get_response():
+            reply = query_ollama(context, user_msg)
+            root.after(0, lambda: finish_response(reply))
+
+        def finish_response(reply):
+            stop_thinking()
+            add_bubble("assistant", reply)
+            messages.append(("assistant", reply))
+            entry.config(state=tk.NORMAL)
+            send_btn.itemconfig(send_circle, fill=SEND_BG)
+            entry.focus()
+
+        threading.Thread(target=get_response, daemon=True).start()
+
+    entry.bind("<Return>", send_message)
+    send_btn.tag_bind(send_circle, "<Button-1>", lambda e: send_message())
+    send_btn.tag_bind(send_arrow,  "<Button-1>", lambda e: send_message())
+
+    def on_send_enter(e): send_btn.itemconfig(send_circle, fill=SEND_HOV)
+    def on_send_leave(e): send_btn.itemconfig(send_circle, fill=SEND_BG)
+    send_btn.bind("<Enter>", on_send_enter)
+    send_btn.bind("<Leave>", on_send_leave)
+
+    entry.focus()
+    root.mainloop()
+
+
+# -------------------------------
+# MAIN
+# -------------------------------
+if __name__ == "__main__":
+    print("Fetching data from Oracle APIs...")
+    context_data, loaded, failed = fetch_all_data()
+    print(f"\nContext preview (first 500 chars):\n{context_data[:500]}\n")
+    print("Launching UI...")
+    create_ui(context_data, loaded, failed)
