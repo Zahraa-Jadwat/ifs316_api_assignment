@@ -4,7 +4,6 @@ import numpy as np
 import threading
 
 
-
 # LLM FUNCTION (Ollama - Gemma 2B)
 
 def query_ollama(context, question):
@@ -28,7 +27,7 @@ ANSWER:
 """
 
         payload = {
-            "model": "gemma:2b",
+            "model": "qwen3.5:2b",
             "prompt": prompt,
             "stream": False
         }
@@ -43,7 +42,6 @@ ANSWER:
 
     except Exception as e:
         return f"Exception: {str(e)}"
-
 
 
 # INTERACTIVE CHAT THREAD
@@ -63,7 +61,6 @@ def start_chat(context):
         print("Answer:", answer, "\n")
 
 
-
 # FETCH DATA FROM API
 
 
@@ -76,8 +73,6 @@ headers = {
 }
 
 response = requests.get(url, headers=headers, timeout=30)
-
-
 
 # PROCESS DATA
 
@@ -117,9 +112,7 @@ if response.status_code == 200:
         regions = sorted(regions)
         categories = sorted(categories)
 
-        
         # BUILD MATRIX
-        
 
         matrix = []
         for region in regions:
@@ -133,18 +126,14 @@ if response.status_code == 200:
                 row.append(value)
             matrix.append(row)
 
-        
         # BUILD LLM CONTEXT
-        
 
         context = "Sales Profit by Region and Category:\n"
 
         for item in clean_items:
             context += f"{item['region']} - {item['category']}: ${item['profit']:,.2f}\n"
 
-       
         # START LLM THREAD
-        
 
         chat_thread = threading.Thread(
             target=start_chat,
@@ -153,9 +142,7 @@ if response.status_code == 200:
         )
         chat_thread.start()
 
-        
         # CREATE HEATMAP
-       
 
         fig, ax = plt.subplots(figsize=(12, 6))
 
@@ -189,7 +176,7 @@ if response.status_code == 200:
 
         plt.tight_layout()
         plt.savefig("sales_per_region.png", dpi=150, bbox_inches="tight")
-        #print("Chart saved!")
+        # print("Chart saved!")
 
         plt.show()
 
