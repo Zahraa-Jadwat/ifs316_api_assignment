@@ -4,7 +4,7 @@ import numpy as np
 import threading
 
 
-# LLM FUNCTION (Ollama - Gemma 2B)
+# LLM FUNCTION (Ollama - qwen 3.5:2b)
 
 def query_ollama(context, question):
     try:
@@ -27,7 +27,7 @@ ANSWER:
 """
 
         payload = {
-            "model": "gemma:2b",   
+            "model": "qwen3.5:2b",
             "prompt": prompt,
             "stream": False
         }
